@@ -1,6 +1,5 @@
 using ButteryBiscuitBase.Domain.Data.Database;
 using ButteryBiscuitBase.Domain.Helpers;
-using ButteryBiscuitBase.Domain.Interfaces.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
