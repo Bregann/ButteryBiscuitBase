@@ -1,4 +1,5 @@
 ﻿using ButteryBiscuitBase.Domain.Data.Database.Models;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -8,8 +9,14 @@ using System.Threading.Tasks;
 
 namespace ButteryBiscuitBase.Domain.Data.Database
 {
-    public class AppDbContext : DbContext
+    public class AppDbContext : IdentityDbContext<User>
     {
-        public DbSet<EnvironmentalSetting> EnvironmentalSettings { get; set; }
+        public AppDbContext(DbContextOptions<AppDbContext> options)
+            : base(options)
+        {
+            
+        }
+
+        public DbSet<EnvironmentalSetting> EnvironmentalSettings { get; set; } = null!;
     }
 }

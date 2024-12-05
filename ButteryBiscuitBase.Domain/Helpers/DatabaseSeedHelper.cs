@@ -1,16 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using ButteryBiscuitBase.Domain.Data.Database;
+using ButteryBiscuitBase.Domain.Interfaces.Helpers;
 
 namespace ButteryBiscuitBase.Domain.Helpers
 {
     public class DatabaseSeedHelper
     {
-        public static async Task SeedDatabase()
+        public static async Task SeedDatabase(AppDbContext context, IEnvironmentalSettingHelper settingsHelper)
         {
-
+            // Generate the data
+            // blah blah blah
         }
     }
 }

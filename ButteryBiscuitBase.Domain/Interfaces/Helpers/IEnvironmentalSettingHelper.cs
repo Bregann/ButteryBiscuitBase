@@ -2,7 +2,7 @@
 
 namespace ButteryBiscuitBase.Domain.Interfaces.Helpers
 {
-    public interface IEnviromentalSettingHelper
+    public interface IEnvironmentalSettingHelper
     {
         Task LoadEnvironmentalSettings();
         string? TryGetEnviromentalSettingValue(EnvironmentalSettingEnum key);

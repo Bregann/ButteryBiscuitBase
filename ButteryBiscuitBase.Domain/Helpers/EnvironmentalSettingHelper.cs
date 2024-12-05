@@ -2,17 +2,21 @@
 using ButteryBiscuitBase.Domain.Enums;
 using ButteryBiscuitBase.Domain.Interfaces.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ButteryBiscuitBase.Domain.Helpers
 {
-    public class EnvironmentalSettingHelper(AppDbContext dbContext): IEnviromentalSettingHelper
+    public class EnvironmentalSettingHelper(IServiceProvider serviceProvider) : IEnvironmentalSettingHelper
     {
-        private readonly AppDbContext _dbContext = dbContext;
         private Dictionary<EnvironmentalSettingEnum, string> _environmentalSettings = [];
 
         public async Task LoadEnvironmentalSettings()
         {
-            _environmentalSettings = await _dbContext.EnvironmentalSettings.ToDictionaryAsync(x => x.Key, x => x.Value);
+            using (var scope = serviceProvider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                _environmentalSettings = await dbContext.EnvironmentalSettings.ToDictionaryAsync(x => x.Key, x => x.Value);
+            }
         }
 
         public string? TryGetEnviromentalSettingValue(EnvironmentalSettingEnum key)
@@ -27,9 +31,14 @@ namespace ButteryBiscuitBase.Domain.Helpers
                 return false;
             }
 
+            using (var scope = serviceProvider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                dbContext.EnvironmentalSettings.Where(x => x.Key == key).First().Value = newValue;
+                await dbContext.SaveChangesAsync();
+            }
+
             _environmentalSettings[key] = newValue;
-            _dbContext.EnvironmentalSettings.Where(x => x.Key == key).First().Value = newValue;
-            await _dbContext.SaveChangesAsync();
             return true;
         }
     }
