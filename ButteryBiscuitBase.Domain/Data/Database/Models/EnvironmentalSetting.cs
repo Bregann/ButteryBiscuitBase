@@ -7,7 +7,7 @@ namespace ButteryBiscuitBase.Domain.Data.Database.Models
     public class EnvironmentalSetting
     {
         [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int Id {  get; set; }
+        public int Id { get; set; }
         public EnvironmentalSettingEnum Key { get; set; }
         public required string Value { get; set; } = string.Empty;
     }

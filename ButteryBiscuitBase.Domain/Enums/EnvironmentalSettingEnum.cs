@@ -2,5 +2,7 @@
 {
     public enum EnvironmentalSettingEnum
     {
+        HangfireUsername,
+        HangfirePassword
     }
 }

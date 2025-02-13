@@ -1,9 +1,20 @@
-using ButteryBiscuitBase.Domain.Data.Database;
-using ButteryBiscuitBase.Domain.Data.Database.Models;
+using ButteryBiscuitBase.Domain.Data.Database.Context;
+using ButteryBiscuitBase.Domain.Enums;
 using ButteryBiscuitBase.Domain.Helpers;
 using ButteryBiscuitBase.Domain.Interfaces.Helpers;
-using Microsoft.AspNetCore.Identity;
+using Hangfire;
+using Hangfire.Dashboard;
+using Hangfire.Dashboard.BasicAuthorization;
+using Hangfire.MemoryStorage;
+using Hangfire.PostgreSql;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using System.Text;
+
+Log.Logger = new LoggerConfiguration().WriteTo.Async(x => x.File("/app/Logs/log.log", retainedFileCountLimit: 7, rollingInterval: RollingInterval.Day)).WriteTo.Console().CreateLogger();
+Log.Information("Logger Setup");
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,53 +25,129 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddHttpContextAccessor();
+
 // Add in our own services
 builder.Services.AddSingleton<IEnvironmentalSettingHelper, EnvironmentalSettingHelper>();
 
-// Add in identity
+// Add in the auth
 builder.Services.AddAuthorization();
-builder.Services.AddAuthentication().AddCookie(IdentityConstants.ApplicationScheme);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = Environment.GetEnvironmentVariable("JwtValidIssuer"),
+            ValidAudience = Environment.GetEnvironmentVariable("JwtValidAudience"),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable("JwtKey")!))
+        };
+    });
 
-builder.Services.AddIdentityCore<User>()
-    .AddEntityFrameworkStores<AppDbContext>()
-    .AddApiEndpoints();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
-// Setup the database
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite("Data Source=" + Directory.GetCurrentDirectory()  + "/application.db"));
-}
-else
-{
-    builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(Environment.GetEnvironmentVariable("xxxConnStringLive")));
-}
+
+#if DEBUG
+builder.Services.AddDbContext<SqliteContext>(options =>
+    options.UseLazyLoadingProxies()
+           .UseSqlite($"Data Source={Directory.GetCurrentDirectory()}/application.db"));
+builder.Services.AddScoped<AppDbContext>(provider => provider.GetService<SqliteContext>());
+
+GlobalConfiguration.Configuration.UseMemoryStorage();
+
+builder.Services.AddHangfire(configuration => configuration
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseMemoryStorage()
+        );
+
+
+#else
+builder.Services.AddDbContext<PostgresqlContext>(options =>
+    options.UseLazyLoadingProxies()
+           .UseNpgsql(Environment.GetEnvironmentVariable("xxxConnStringLive")));
+builder.Services.AddScoped<AppDbContext>(provider => provider.GetService<PostgresqlContext>());
+
+GlobalConfiguration.Configuration.UsePostgreSqlStorage(c => c.UseNpgsqlConnection(Environment.GetEnvironmentVariable("xxxConnString")));
+
+builder.Services.AddHangfire(configuration => configuration
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UsePostgreSqlStorage(c => c.UseNpgsqlConnection(Environment.GetEnvironmentVariable("xxxConnString")))
+        );
+
+
+#endif
+
+// hangfire
+builder.Services.AddHangfireServer(options => options.SchedulePollingInterval = TimeSpan.FromSeconds(10));
+
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+app.UseCors("AllowAll");
+
+
+#if DEBUG
+// Seed the database
+using (var scope = app.Services.CreateScope())
 {
-    // Seed the database
-    using (var scope = app.Services.CreateScope())
+    var dbContext = scope.ServiceProvider.GetService<AppDbContext>()!;
+    var settingsHelper = scope.ServiceProvider.GetRequiredService<IEnvironmentalSettingHelper>();
+
+    if (dbContext.Database.GetPendingMigrations().Any())
     {
-        var dbContext = scope.ServiceProvider.GetService<AppDbContext>()!;
-        var settingsHelper = scope.ServiceProvider.GetRequiredService<IEnvironmentalSettingHelper>();
-
-        await DatabaseSeedHelper.SeedDatabase(dbContext, settingsHelper);
-
         await dbContext.Database.MigrateAsync();
+        await DatabaseSeedHelper.SeedDatabase(dbContext, settingsHelper, scope.ServiceProvider);
     }
-
-    app.UseSwagger();
-    app.UseSwaggerUI();
 }
+#endif
+
+var environmentalSettingHelper = app.Services.GetService<EnvironmentalSettingHelper>()!;
+await environmentalSettingHelper.LoadEnvironmentalSettings();
+
+// Configure the HTTP request pipeline.
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapIdentityApi<User>();
-
 app.MapControllers();
+
+var auth = new[] { new BasicAuthAuthorizationFilter(new BasicAuthAuthorizationFilterOptions
+{
+    RequireSsl = false,
+    SslRedirect = false,
+    LoginCaseSensitive = true,
+    Users = new []
+    {
+        new BasicAuthAuthorizationUser
+        {
+            Login = environmentalSettingHelper.TryGetEnviromentalSettingValue(EnvironmentalSettingEnum.HangfireUsername),
+            PasswordClear = environmentalSettingHelper.TryGetEnviromentalSettingValue(EnvironmentalSettingEnum.HangfireUsername)
+        }
+    }
+})};
+
+app.MapHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = auth
+}, JobStorage.Current);
 
 app.Run();
