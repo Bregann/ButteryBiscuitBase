@@ -116,7 +116,7 @@ using (var scope = app.Services.CreateScope())
 }
 #endif
 
-var environmentalSettingHelper = app.Services.GetService<EnvironmentalSettingHelper>()!;
+var environmentalSettingHelper = app.Services.GetService<IEnvironmentalSettingHelper>()!;
 await environmentalSettingHelper.LoadEnvironmentalSettings();
 
 // Configure the HTTP request pipeline.
@@ -129,6 +129,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.UseHangfireDashboard();
 
 var auth = new[] { new BasicAuthAuthorizationFilter(new BasicAuthAuthorizationFilterOptions
 {
